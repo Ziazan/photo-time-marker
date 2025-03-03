@@ -6,6 +6,7 @@ struct Photo: Identifiable, Equatable, Hashable {
     var processedURL: URL?
     var processingStatus: ProcessingStatus = .pending
     var error: String?
+    var progress: Double = 0  // 添加进度属性，范围 0-1
     
     enum ProcessingStatus {
         case pending

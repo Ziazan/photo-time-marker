@@ -8,7 +8,14 @@ struct ContentView: View {
         NavigationView {
             Sidebar(viewModel: viewModel)
             
-            VStack {
+            VStack(spacing: 0) {
+                Text("文件列表")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(Color(.textBackgroundColor).opacity(0.1))
+                
                 if viewModel.photos.isEmpty {
                     EmptyStateView()
                 } else {
@@ -18,16 +25,18 @@ struct ContentView: View {
             }
             
             VStack {
-                if viewModel.selectedPhoto == nil {
-                    Text("请选择一张照片")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if let selectedPhoto = viewModel.selectedPhoto {
+                    PhotoPreviewView(photo: selectedPhoto)
                 } else {
-                    PhotoPreviewView(selectedPhoto: $viewModel.selectedPhoto)
+                    Text("请选择一张照片")
+                        .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .frame(minWidth: 800, minHeight: 600)
+            .frame(minWidth: 400)
         }
+        .navigationTitle("照片打印")
+        .frame(minWidth: 800, minHeight: 600)
         .toolbar {
             ToolbarItemGroup(placement: .automatic) {
                 Button(action: {

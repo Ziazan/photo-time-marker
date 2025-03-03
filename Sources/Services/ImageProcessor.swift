@@ -12,19 +12,27 @@ class ImageProcessor {
     
     func processPhoto(_ photo: Photo, 
                     with settings: WatermarkSettings,
-                    outputDir: URL) async throws {
+                    outputDir: URL,
+                    progressHandler: @escaping (Double) -> Void) async throws {
         // 更新状态为处理中
         await MainActor.run {
-            var updatedPhoto = photo
-            updatedPhoto.processingStatus = .processing
+            progressHandler(0.1)  // 开始处理
         }
         
         guard let image = CIImage(contentsOf: photo.originalURL) else {
             throw ProcessError.invalidImage
         }
         
+        await MainActor.run {
+            progressHandler(0.3)  // 加载图片完成
+        }
+        
         // 读取EXIF信息
         let date = try await exifReader.getCreationDate(from: photo.originalURL)
+        
+        await MainActor.run {
+            progressHandler(0.5)  // EXIF读取完成
+        }
         
         // 创建输出URL
         let outputURL = try createOutputURL(for: photo, in: outputDir)
@@ -41,14 +49,16 @@ class ImageProcessor {
             finalImage = image
         }
         
+        await MainActor.run {
+            progressHandler(0.8)  // 水印处理完成
+        }
+        
         // 保存处理后的图片
         try save(finalImage, to: outputURL)
         
         // 更新照片状态
         await MainActor.run {
-            var updatedPhoto = photo
-            updatedPhoto.processedURL = outputURL
-            updatedPhoto.processingStatus = .completed
+            progressHandler(1.0)  // 处理完成
         }
     }
     

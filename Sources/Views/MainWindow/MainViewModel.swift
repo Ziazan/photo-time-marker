@@ -39,16 +39,33 @@ class MainViewModel: ObservableObject {
                 guard photo.processingStatus == .pending else { continue }
                 
                 do {
-                    try await imageProcessor.processPhoto(photo, 
-                                                       with: appSettings.watermarkSettings,
-                                                       outputDir: appSettings.outputDirectory)
+                    // 更新状态为处理中
+                    await MainActor.run {
+                        photos[index].processingStatus = .processing
+                        photos[index].progress = 0
+                    }
+                    
+                    try await imageProcessor.processPhoto(
+                        photo, 
+                        with: appSettings.watermarkSettings,
+                        outputDir: appSettings.outputDirectory,
+                        progressHandler: { progress in
+                            // 更新进度
+                            DispatchQueue.main.async {
+                                self.photos[index].progress = progress
+                            }
+                        }
+                    )
+                    
                     await MainActor.run {
                         photos[index].processingStatus = .completed
+                        photos[index].progress = 1.0
                         progressManager.advance()
                     }
                 } catch {
                     await MainActor.run {
                         photos[index].processingStatus = .failed
+                        photos[index].progress = 0
                         errorMessage = error.localizedDescription
                         showError = true
                         progressManager.advance()
@@ -67,12 +84,22 @@ class MainViewModel: ObservableObject {
     }
     
     func processSelectedPhotos() {
-        print("processSelectedPhotos 被调用")  // 添加调试输出
+        print("processSelectedPhotos 被调用")
         
-        // 如果没有选中照片，处理所有照片
-        let photosToProcess = selectedPhoto != nil ? 
-            [selectedPhoto!] : 
-            photos.filter { $0.processingStatus != .completed }
+        // 检查是否有选中的照片
+        if selectedPhoto == nil {
+            // 显示提示
+            let alert = NSAlert()
+            alert.messageText = "未选择照片"
+            alert.informativeText = "请先选择要处理的照片"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "确定")
+            alert.runModal()
+            return
+        }
+        
+        // 只处理选中的照片
+        let photosToProcess = [selectedPhoto!]
         
         if photosToProcess.isEmpty {
             print("没有需要处理的照片")
@@ -85,12 +112,116 @@ class MainViewModel: ObservableObject {
             for photo in photosToProcess {
                 do {
                     print("处理照片: \(photo.originalURL.lastPathComponent)")
-                    try await imageProcessor.processPhoto(photo, 
-                                                       with: appSettings.watermarkSettings,
-                                                       outputDir: appSettings.outputDirectory)
+                    
+                    // 更新状态为处理中
+                    await MainActor.run {
+                        if let index = photos.firstIndex(where: { $0.id == photo.id }) {
+                            photos[index].processingStatus = .processing
+                            photos[index].progress = 0
+                        }
+                    }
+                    
+                    try await imageProcessor.processPhoto(
+                        photo, 
+                        with: appSettings.watermarkSettings,
+                        outputDir: appSettings.outputDirectory,
+                        progressHandler: { progress in
+                            // 确保在主线程上更新 UI
+                            Task { @MainActor in
+                                if let index = self.photos.firstIndex(where: { $0.id == photo.id }) {
+                                    // 使用临时变量来确保触发 UI 更新
+                                    var updatedPhoto = self.photos[index]
+                                    updatedPhoto.progress = progress
+                                    self.photos[index] = updatedPhoto
+                                    
+                                    // 添加调试输出
+                                    print("更新照片进度: \(photo.originalURL.lastPathComponent) - \(progress)")
+                                }
+                            }
+                        }
+                    )
+                    
                     await MainActor.run {
                         if let index = photos.firstIndex(where: { $0.id == photo.id }) {
                             photos[index].processingStatus = .completed
+                            photos[index].progress = 1.0
+                            print("照片处理完成: \(photo.originalURL.lastPathComponent)")
+                        }
+                    }
+                } catch {
+                    await MainActor.run {
+                        if let index = photos.firstIndex(where: { $0.id == photo.id }) {
+                            photos[index].processingStatus = .failed
+                            photos[index].error = error.localizedDescription
+                            print("照片处理失败: \(error.localizedDescription)")
+                        }
+                    }
+                }
+            }
+            
+            // 处理完成后通知用户
+            await MainActor.run {
+                NSSound.beep()
+                showCompletionAlert()
+            }
+        }
+    }
+    
+    func processAllPhotos() {
+        print("processAllPhotos 被调用")
+        
+        let photosToProcess = photos.filter { $0.processingStatus != .completed }
+        
+        if photosToProcess.isEmpty {
+            print("没有需要处理的照片")
+            let alert = NSAlert()
+            alert.messageText = "没有待处理照片"
+            alert.informativeText = "所有照片已处理完成"
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "确定")
+            alert.runModal()
+            return
+        }
+        
+        print("开始处理 \(photosToProcess.count) 张照片")
+        
+        Task {
+            for photo in photosToProcess {
+                do {
+                    print("处理照片: \(photo.originalURL.lastPathComponent)")
+                    
+                    // 更新状态为处理中
+                    await MainActor.run {
+                        if let index = photos.firstIndex(where: { $0.id == photo.id }) {
+                            photos[index].processingStatus = .processing
+                            photos[index].progress = 0
+                        }
+                    }
+                    
+                    try await imageProcessor.processPhoto(
+                        photo, 
+                        with: appSettings.watermarkSettings,
+                        outputDir: appSettings.outputDirectory,
+                        progressHandler: { progress in
+                            // 确保在主线程上更新 UI
+                            Task { @MainActor in
+                                if let index = self.photos.firstIndex(where: { $0.id == photo.id }) {
+                                    // 使用临时变量来确保触发 UI 更新
+                                    var updatedPhoto = self.photos[index]
+                                    updatedPhoto.progress = progress
+                                    self.photos[index] = updatedPhoto
+                                    
+                                    // 添加调试输出
+                                    print("更新照片进度: \(photo.originalURL.lastPathComponent) - \(progress)")
+                                }
+                            }
+                        }
+                    )
+                    
+                    await MainActor.run {
+                        if let index = photos.firstIndex(where: { $0.id == photo.id }) {
+                            photos[index].processingStatus = .completed
+                            photos[index].progress = 1.0
                             print("照片处理完成: \(photo.originalURL.lastPathComponent)")
                         }
                     }

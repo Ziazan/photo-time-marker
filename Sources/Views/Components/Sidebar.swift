@@ -14,10 +14,18 @@ struct Sidebar: View {
                 .disabled(viewModel.photos.isEmpty)
                 
                 Button(action: {
-                    print("开始处理照片")
+                    print("开始处理选中照片")
                     viewModel.processSelectedPhotos()
                 }) {
                     Label("处理选中照片", systemImage: "photo.badge.checkmark")
+                }
+                .disabled(viewModel.photos.isEmpty)
+                
+                Button(action: {
+                    print("开始处理所有照片")
+                    viewModel.processAllPhotos()
+                }) {
+                    Label("处理所有照片", systemImage: "photo.stack")
                 }
                 .disabled(viewModel.photos.isEmpty)
             }

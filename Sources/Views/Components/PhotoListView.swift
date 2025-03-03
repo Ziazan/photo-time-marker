@@ -32,25 +32,42 @@ struct PhotoRow: View {
     let isSelected: Bool
     
     var body: some View {
-        HStack {
-            Image(systemName: statusIcon(for: photo))
-                .foregroundColor(statusColor(for: photo))
-            
-            Text(photo.originalURL.lastPathComponent)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .foregroundColor(isSelected ? .white : .primary)
-            
-            Spacer()
-            
-            if let error = photo.error {
-                Button(action: {
-                    // 显示错误详情
-                }) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .foregroundColor(.yellow)
+        VStack(spacing: 4) {
+            HStack {
+                Image(systemName: statusIcon(for: photo))
+                    .foregroundColor(statusColor(for: photo))
+                
+                Text(photo.originalURL.lastPathComponent)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundColor(isSelected ? .white : .primary)
+                
+                Spacer()
+                
+                if let error = photo.error {
+                    Button(action: {
+                        // 显示错误详情
+                    }) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .foregroundColor(.yellow)
+                    }
+                    .help(error)
                 }
-                .help(error)
+                
+                if photo.processingStatus == .processing {
+                    Text("\(Int(photo.progress * 100))%")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                }
+            }
+            
+            // 如果正在处理，显示进度条
+            if photo.processingStatus == .processing {
+                ProgressView(value: photo.progress, total: 1.0)
+                    .progressViewStyle(LinearProgressViewStyle())
+                    .frame(height: 6)
+                    .padding(.top, 4)
+                    .animation(.easeInOut, value: photo.progress)
             }
         }
         .padding(.vertical, 8)
