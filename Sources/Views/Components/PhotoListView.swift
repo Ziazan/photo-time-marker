@@ -1,20 +1,89 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct PhotoListView: View {
     let photos: [Photo]
     let onRemove: (Photo) -> Void
+    var onDrop: ([URL]) -> Void
+    
+    let columns = [
+        GridItem(.adaptive(minimum: 150, maximum: 200), spacing: 16)
+    ]
+    
+    @State private var isTargeted = false
     
     var body: some View {
         ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150))], spacing: 10) {
+            LazyVGrid(columns: columns, spacing: 16) {
                 ForEach(photos) { photo in
                     PhotoPreviewView(photo: photo, onRemove: {
                         onRemove(photo)
                     })
                 }
+                
+                // 添加一个拖放区域作为"添加更多"按钮
+                VStack {
+                    Image(systemName: "plus.circle")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 40, height: 40)
+                        .foregroundColor(isTargeted ? .accentColor : .secondary)
+                    
+                    Text("添加更多照片")
+                        .font(.caption)
+                        .foregroundColor(isTargeted ? .accentColor : .secondary)
+                }
+                .frame(width: 150, height: 150)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [5]))
+                        .foregroundColor(isTargeted ? .accentColor : .secondary)
+                )
+                .contentShape(Rectangle())
+                .onDrop(of: [UTType.fileURL.identifier], isTargeted: .some($isTargeted)) { providers in
+                    handleDrop(providers: providers)
+                }
             }
             .padding()
         }
+        .background(Color(.textBackgroundColor).opacity(0.05))
+        .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil) { providers in
+            handleDrop(providers: providers)
+        }
+    }
+    
+    private func handleDrop(providers: [NSItemProvider]) -> Bool {
+        print("🟣 PhotoListView: Drop detected with \(providers.count) providers")
+        
+        let group = DispatchGroup()
+        var urls: [URL] = []
+        
+        for provider in providers {
+            group.enter()
+            
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { (data, error) in
+                defer { group.leave() }
+                
+                if let url = data as? URL {
+                    urls.append(url)
+                } else if let data = data as? Data {
+                    if let url = URL(dataRepresentation: data, relativeTo: nil) {
+                        urls.append(url)
+                    } else if let urlString = String(data: data, encoding: .utf8),
+                              let url = URL(string: urlString) {
+                        urls.append(url)
+                    }
+                }
+            }
+        }
+        
+        group.notify(queue: .main) {
+            if !urls.isEmpty {
+                onDrop(urls)
+            }
+        }
+        
+        return true
     }
 }
 

@@ -272,11 +272,29 @@ class MainViewModel: ObservableObject {
     
     // 添加照片
     func addPhotos(from urls: [URL]) {
-        for url in urls {
-            if isImageFile(url) {
-                let photo = Photo(originalURL: url)
-                photos.append(photo)
-            }
+        print("🟢 addPhotos called with \(urls.count) URLs")
+        urls.forEach { print("🟢 URL: \($0.path)") }
+        
+        let validUrls = urls.filter { isImageFile($0) }
+        print("🟢 Valid image URLs: \(validUrls.count)")
+        
+        let newPhotos = validUrls.map { Photo(originalURL: $0) }
+        print("🟢 Created \(newPhotos.count) photo objects")
+        
+        if newPhotos.isEmpty {
+            print("🟢 ⚠️ No valid photos to add!")
+            return
+        }
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            let oldCount = self.photos.count
+            self.photos.append(contentsOf: newPhotos)
+            print("🟢 Photos array updated: \(oldCount) -> \(self.photos.count)")
+            
+            // 强制 UI 刷新
+            self.objectWillChange.send()
         }
     }
     

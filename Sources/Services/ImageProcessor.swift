@@ -108,33 +108,12 @@ class ImageProcessor {
         // 计算文本尺寸
         let textSize = dateString.size(withAttributes: attributes)
         
-        // 计算位置 - 使用设置中的位置
-        let margin: CGFloat = 40.0  // 增加边距到40像素，确保有足够的间距
-        let x: CGFloat
-        let y: CGFloat
+        // 计算水印位置
+        let imageWidth = CGFloat(cgImage.width)
         
-        // 根据设置的位置确定水印位置
-        switch settings.position {
-        case CGPoint(x: 0.05, y: 0.05):  // 左下角
-            x = margin
-            y = margin
-        case CGPoint(x: 0.95, y: 0.05):  // 右下角 (默认)
-            x = imageSize.width - textSize.width - margin
-            y = margin
-        case CGPoint(x: 0.05, y: 0.95):  // 左上角
-            x = margin
-            y = imageSize.height - textSize.height - margin
-        case CGPoint(x: 0.95, y: 0.95):  // 右上角
-            x = imageSize.width - textSize.width - margin
-            y = imageSize.height - textSize.height - margin
-        default:  // 自定义位置
-            // 对于自定义位置，我们仍然确保文本不会太靠近边缘
-            let customX = imageSize.width * settings.position.x - textSize.width / 2
-            let customY = imageSize.height * (1.0 - settings.position.y) - textSize.height / 2
-            
-            x = max(margin, min(customX, imageSize.width - textSize.width - margin))
-            y = max(margin, min(customY, imageSize.height - textSize.height - margin))
-        }
+        // 使用绝对边距计算位置，注意在 macOS 中 Y 坐标是从底部向上增长的
+        let x = imageWidth - settings.marginRight - textSize.width
+        let y = settings.marginBottom // 直接使用底部边距作为 Y 坐标
         
         // 绘制文本
         dateString.draw(at: NSPoint(x: x, y: y), withAttributes: attributes)

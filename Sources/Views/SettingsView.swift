@@ -8,6 +8,16 @@ struct SettingsView: View {
     @State private var selectedColor: Color
     @State private var showDirectoryPicker = false
     
+    // 添加数值格式化器
+    private let numberFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.allowsFloats = false
+        formatter.minimum = 0
+        formatter.maximum = 1000
+        return formatter
+    }()
+    
     init(settings: Binding<WatermarkSettings>, isPresented: Binding<Bool>) {
         self._settings = settings
         self._isPresented = isPresented
@@ -44,8 +54,8 @@ struct SettingsView: View {
                 
                 Text("水印颜色:")
                 ColorPicker("选择颜色", selection: $selectedColor)
-                    .onChange(of: selectedColor) { newColor in
-                        if let cgColor = newColor.cgColor {
+                    .onChange(of: selectedColor) { oldValue, newValue in
+                        if let cgColor = newValue.cgColor {
                             let ciColor = CIColor(cgColor: cgColor)
                             settings.textColor = ColorComponents(
                                 redComponent: Double(ciColor.red),
@@ -58,15 +68,21 @@ struct SettingsView: View {
                 
                 Text("水印位置:")
                 HStack {
-                    Text("X: \(Int(settings.position.x * 100))%")
-                    Slider(value: $settings.position.x, in: 0...1)
-                        .frame(maxWidth: 300)
+                    Text("距右边距:")
+                    TextField("", value: $settings.marginRight, formatter: numberFormatter)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .frame(width: 80)
+                    Text("像素")
+                    
+                    Spacer()
+                    
+                    Text("距下边距:")
+                    TextField("", value: $settings.marginBottom, formatter: numberFormatter)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .frame(width: 80)
+                    Text("像素")
                 }
-                HStack {
-                    Text("Y: \(Int(settings.position.y * 100))%")
-                    Slider(value: $settings.position.y, in: 0...1)
-                        .frame(maxWidth: 300)
-                }
+                .padding(.vertical, 5)
                 
                 Text("输出文件夹:")
                 HStack {
@@ -101,8 +117,8 @@ struct SettingsView: View {
         .padding()
         .frame(width: 450)
         .background {
-            EmptyView().onChange(of: showDirectoryPicker) { show in
-                if show {
+            EmptyView().onChange(of: showDirectoryPicker) { oldValue, newValue in
+                if newValue {
                     selectOutputDirectory()
                 }
             }

@@ -19,8 +19,13 @@ struct ContentView: View {
                     }
                 )
             } else {
-                PhotoListView(photos: viewModel.photos, 
-                            onRemove: viewModel.removePhoto)
+                PhotoListView(
+                    photos: viewModel.photos, 
+                    onRemove: viewModel.removePhoto,
+                    onDrop: { urls in
+                        viewModel.addPhotos(from: urls)
+                    }
+                )
             }
             
             // 进度条（如果正在处理）
@@ -86,10 +91,6 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView(settings: $watermarkSettings, isPresented: $showSettings)
-        }
-        .onDrop(of: [UTType.fileURL.identifier], isTargeted: nil) { providers in
-            viewModel.handleDrop(providers: providers)
-            return true
         }
         .alert(item: $viewModel.errorMessage) { error in
             Alert(
