@@ -1,19 +1,36 @@
 import SwiftUI
 
-struct WatermarkSettings {
+struct WatermarkSettings: Codable {
     var dateFormat: String
     var fontName: String
     var fontSize: CGFloat
-    var textColor: NSColor
     var position: CGPoint
-    var shadowEnabled: Bool
+    var textColor: ColorComponents
+    var outputDirectory: URL
     
-    static let `default` = WatermarkSettings(
-        dateFormat: "yyyy-MM-dd",
-        fontName: "Digital Display",
-        fontSize: 0.04,
-        textColor: NSColor(red: 0.745, green: 0.529, blue: 0.314, alpha: 1.0),
-        position: CGPoint(x: 0.95, y: 0.01),
-        shadowEnabled: false
-    )
+    static var `default`: WatermarkSettings {
+        let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let defaultOutputDir = documentsDirectory.appendingPathComponent("MacPhotoWatermark")
+        
+        return WatermarkSettings(
+            dateFormat: "yyyy-MM-dd",
+            fontName: "Digital Display",
+            fontSize: 0.04,  // 相对于图片较短边的比例
+            position: CGPoint(x: 0.85, y: 0.95),  // 右下角
+            textColor: ColorComponents(
+                redComponent: 0.745,
+                greenComponent: 0.529,
+                blueComponent: 0.314,
+                alphaComponent: 1
+            ),
+            outputDirectory: defaultOutputDir
+        )
+    }
+}
+
+struct ColorComponents: Codable {
+    var redComponent: Double
+    var greenComponent: Double
+    var blueComponent: Double
+    var alphaComponent: Double
 } 

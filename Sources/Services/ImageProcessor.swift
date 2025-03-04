@@ -43,7 +43,8 @@ class ImageProcessor {
             // 创建水印
             finalImage = try addWatermark(to: image, 
                                         date: date,
-                                        settings: settings)
+                                        settings: settings,
+                                        originalURL: photo.originalURL)
         } else {
             print("未找到照片日期，跳过水印")
             finalImage = image
@@ -54,7 +55,7 @@ class ImageProcessor {
         }
         
         // 保存处理后的图片
-        try save(finalImage, to: outputURL)
+        try save(finalImage, to: outputURL, from: photo.originalURL)
         
         // 更新照片状态
         await MainActor.run {
@@ -64,7 +65,8 @@ class ImageProcessor {
     
     private func addWatermark(to image: CIImage, 
                             date: Date,
-                            settings: WatermarkSettings) throws -> CIImage {
+                            settings: WatermarkSettings,
+                            originalURL: URL) throws -> CIImage {
         let imageSize = image.extent.size
         
         // 首先将 CIImage 转换为 CGImage
@@ -73,68 +75,81 @@ class ImageProcessor {
             throw ProcessError.watermarkError
         }
         
-        // 创建 Graphics Context
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        guard let context = CGContext(data: nil,
-                                    width: Int(imageSize.width),
-                                    height: Int(imageSize.height),
-                                    bitsPerComponent: 8,
-                                    bytesPerRow: 0,
-                                    space: colorSpace,
-                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
-            throw ProcessError.watermarkError
-        }
+        // 创建 NSImage 用于绘制
+        let nsImage = NSImage(cgImage: cgImage, size: imageSize)
         
-        // 绘制原始图片
-        let rect = CGRect(origin: .zero, size: imageSize)
-        context.draw(cgImage, in: rect)
+        // 在 NSImage 上绘制水印
+        nsImage.lockFocus()
         
-        // 设置文本绘制
-        context.saveGState()
+        // 设置文本属性
+        let fontSize = min(imageSize.width, imageSize.height) * settings.fontSize
+        let font = NSFont(name: settings.fontName, size: fontSize) ?? NSFont.systemFont(ofSize: fontSize)
         
-        // 绘制时间水印
-        let dateFont = CTFontCreateWithName(settings.fontName as CFString,
-                                          imageSize.height * settings.fontSize,
-                                          nil)
-        
-        // 创建包含颜色的文本属性
         let color = settings.textColor
-        let colorRef = CGColor(red: CGFloat(color.redComponent),
-                             green: CGFloat(color.greenComponent),
-                             blue: CGFloat(color.blueComponent),
-                             alpha: CGFloat(color.alphaComponent))
+        let nsColor = NSColor(red: CGFloat(color.redComponent),
+                            green: CGFloat(color.greenComponent),
+                            blue: CGFloat(color.blueComponent),
+                            alpha: CGFloat(color.alphaComponent))
         
-        // 包含字体和颜色的属性字典
-        let dateAttrs = [
-            kCTFontAttributeName: dateFont,
-            kCTForegroundColorAttributeName: colorRef
-        ] as CFDictionary
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .right
         
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: nsColor,
+            .paragraphStyle: paragraphStyle
+        ]
+        
+        // 格式化日期
         let formatter = DateFormatter()
         formatter.dateFormat = settings.dateFormat
-        let dateText = formatter.string(from: date) as CFString
+        let dateString = formatter.string(from: date)
         
-        let dateLine = CTLineCreateWithAttributedString(
-            CFAttributedStringCreate(nil, dateText, dateAttrs)!
-        )
+        // 计算文本尺寸
+        let textSize = dateString.size(withAttributes: attributes)
         
-        let dateBounds = CTLineGetBoundsWithOptions(dateLine, .useOpticalBounds)
-        let dateX = imageSize.width * settings.position.x - dateBounds.width  // 右对齐
-        let dateY = imageSize.height * settings.position.y + dateBounds.height  // 从底部计算，加上文本高度
+        // 计算位置 - 使用设置中的位置
+        let margin: CGFloat = 40.0  // 增加边距到40像素，确保有足够的间距
+        let x: CGFloat
+        let y: CGFloat
         
-        // 绘制时间水印
-        context.textPosition = CGPoint(x: dateX, y: dateY)
-        CTLineDraw(dateLine, context)
+        // 根据设置的位置确定水印位置
+        switch settings.position {
+        case CGPoint(x: 0.05, y: 0.05):  // 左下角
+            x = margin
+            y = margin
+        case CGPoint(x: 0.95, y: 0.05):  // 右下角 (默认)
+            x = imageSize.width - textSize.width - margin
+            y = margin
+        case CGPoint(x: 0.05, y: 0.95):  // 左上角
+            x = margin
+            y = imageSize.height - textSize.height - margin
+        case CGPoint(x: 0.95, y: 0.95):  // 右上角
+            x = imageSize.width - textSize.width - margin
+            y = imageSize.height - textSize.height - margin
+        default:  // 自定义位置
+            // 对于自定义位置，我们仍然确保文本不会太靠近边缘
+            let customX = imageSize.width * settings.position.x - textSize.width / 2
+            let customY = imageSize.height * (1.0 - settings.position.y) - textSize.height / 2
+            
+            x = max(margin, min(customX, imageSize.width - textSize.width - margin))
+            y = max(margin, min(customY, imageSize.height - textSize.height - margin))
+        }
         
-        context.restoreGState()
+        // 绘制文本
+        dateString.draw(at: NSPoint(x: x, y: y), withAttributes: attributes)
         
-        // 获取结果图片
-        guard let resultCGImage = context.makeImage() else {
+        nsImage.unlockFocus()
+        
+        // 将 NSImage 转换回 CIImage
+        guard let tiffData = nsImage.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiffData),
+              let jpegData = bitmap.representation(using: .jpeg, properties: [:]),
+              let ciImage = CIImage(data: jpegData) else {
             throw ProcessError.watermarkError
         }
         
-        // 转换回 CIImage
-        return CIImage(cgImage: resultCGImage)
+        return ciImage
     }
     
     private func createOutputURL(for photo: Photo, in directory: URL) throws -> URL {
@@ -159,26 +174,48 @@ class ImageProcessor {
         return outputURL
     }
     
-    private func save(_ image: CIImage, to url: URL) throws {
+    private func save(_ image: CIImage, to url: URL, from originalURL: URL) throws {
         let context = CIContext()
         guard let cgImage = context.createCGImage(image, from: image.extent) else {
             throw ProcessError.saveError
         }
         
+        // 根据原始文件扩展名确定输出类型
+        let originalExtension = originalURL.pathExtension.lowercased()
+        let typeIdentifier: String
+        switch originalExtension {
+        case "jpg", "jpeg":
+            typeIdentifier = UTType.jpeg.identifier
+        case "png":
+            typeIdentifier = UTType.png.identifier
+        case "heic":
+            typeIdentifier = UTType.heic.identifier
+        default:
+            typeIdentifier = UTType.jpeg.identifier
+        }
+        
         guard let destination = CGImageDestinationCreateWithURL(
             url as CFURL,
-            UTType.jpeg.identifier as CFString,
+            typeIdentifier as CFString,
             1,
             nil
         ) else {
             throw ProcessError.saveError
         }
         
-        let options = [
-            kCGImageDestinationLossyCompressionQuality: 0.9
-        ] as CFDictionary
-        
-        CGImageDestinationAddImage(destination, cgImage, options)
+        // 复制原始图片的属性，包括方向信息
+        if let source = CGImageSourceCreateWithURL(originalURL as CFURL, nil),
+           let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) {
+            // 完全保持原始属性，不修改任何内容
+            CGImageDestinationAddImage(destination, cgImage, properties)
+        } else {
+            // 如果无法获取原始属性，使用默认设置
+            let options = [
+                kCGImageDestinationLossyCompressionQuality: 1.0
+            ] as CFDictionary
+            
+            CGImageDestinationAddImage(destination, cgImage, options)
+        }
         
         if !CGImageDestinationFinalize(destination) {
             throw ProcessError.saveError
@@ -199,6 +236,21 @@ class ImageProcessor {
             case .saveError:
                 return "保存图片失败"
             }
+        }
+    }
+}
+
+// 添加扩展来获取图片类型
+extension Data {
+    var imageType: CIFormat {
+        let header = self.prefix(3).map { UInt8($0) }
+        switch header {
+        case [0xFF, 0xD8, 0xFF]:  // JPEG header
+            return .RGBA8
+        case [0x89, 0x50, 0x4E]:  // PNG header
+            return .RGBA16
+        default:
+            return .RGBA8  // 默认使用 JPEG
         }
     }
 } 

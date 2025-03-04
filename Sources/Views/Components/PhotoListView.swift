@@ -1,27 +1,19 @@
 import SwiftUI
 
 struct PhotoListView: View {
-    var photos: [Photo]
-    @Binding var selectedPhoto: Photo?
+    let photos: [Photo]
+    let onRemove: (Photo) -> Void
     
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 4) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150))], spacing: 10) {
                 ForEach(photos) { photo in
-                    PhotoRow(photo: photo, isSelected: selectedPhoto?.id == photo.id)
-                        .contentShape(Rectangle())
-                        .background(selectedPhoto?.id == photo.id ? Color.accentColor.opacity(0.2) : Color.clear)
-                        .onTapGesture {
-                            // 确保选择逻辑正确
-                            if selectedPhoto?.id == photo.id {
-                                selectedPhoto = nil  // 再次点击取消选择
-                            } else {
-                                selectedPhoto = photo  // 选择新照片
-                            }
-                        }
+                    PhotoPreviewView(photo: photo, onRemove: {
+                        onRemove(photo)
+                    })
                 }
             }
-            .padding(.horizontal)
+            .padding()
         }
     }
 }

@@ -7,9 +7,11 @@ class MainViewModel: ObservableObject {
     @Published var selectedPhoto: Photo?
     @Published var watermarkSettings = WatermarkSettings.default
     @Published var showSettings = false
-    @Published var errorMessage: String?
+    @Published var errorMessage: ErrorMessage? = nil
     @Published var showError = false
     @Published var isShowingSettings = false
+    @Published var isProcessing: Bool = false
+    @Published var progress: Double = 0.0
     
     private let imageProcessor = ImageProcessor()
     private let _progressManager = ProgressManager()
@@ -66,7 +68,7 @@ class MainViewModel: ObservableObject {
                     await MainActor.run {
                         photos[index].processingStatus = .failed
                         photos[index].progress = 0
-                        errorMessage = error.localizedDescription
+                        errorMessage = ErrorMessage(message: error.localizedDescription)
                         showError = true
                         progressManager.advance()
                     }
@@ -267,4 +269,135 @@ class MainViewModel: ObservableObject {
         photos.removeAll()
         selectedPhoto = nil
     }
+    
+    // 添加照片
+    func addPhotos(from urls: [URL]) {
+        for url in urls {
+            if isImageFile(url) {
+                let photo = Photo(originalURL: url)
+                photos.append(photo)
+            }
+        }
+    }
+    
+    // 移除照片
+    func removePhoto(_ photo: Photo) {
+        photos.removeAll { $0.id == photo.id }
+    }
+    
+    // 处理拖放
+    func handleDrop(providers: [NSItemProvider]) -> Bool {
+        var urls: [URL] = []
+        let group = DispatchGroup()
+        
+        for provider in providers {
+            group.enter()
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier) { (data, error) in
+                defer { group.leave() }
+                
+                if let url = data as? URL {
+                    urls.append(url)
+                }
+            }
+        }
+        
+        group.notify(queue: .main) {
+            self.addPhotos(from: urls)
+        }
+        
+        return true
+    }
+    
+    // 打开文件对话框
+    func openFileDialog() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [.jpeg, .png, .heic]
+        
+        panel.begin { response in
+            if response == .OK {
+                DispatchQueue.main.async {
+                    self.addPhotos(from: panel.urls)
+                }
+            }
+        }
+    }
+    
+    // 处理照片
+    func processPhotos(with settings: WatermarkSettings) {
+        guard !photos.isEmpty, !isProcessing else { return }
+        
+        isProcessing = true
+        progress = 0.0
+        
+        // 使用设置中的输出目录
+        let outputDir = settings.outputDirectory
+        
+        // 确保输出目录存在
+        try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+        
+        Task {
+            do {
+                // 处理每张照片
+                for (index, photo) in photos.enumerated() {
+                    try await imageProcessor.processPhoto(
+                        photo,
+                        with: settings,
+                        outputDir: outputDir
+                    ) { progressValue in
+                        // 更新总体进度
+                        let photoProgress = progressValue / Double(self.photos.count)
+                        let overallProgress = Double(index) / Double(self.photos.count) + photoProgress
+                        
+                        Task { @MainActor in
+                            self.progress = overallProgress
+                        }
+                    }
+                }
+                
+                // 处理完成
+                await MainActor.run {
+                    self.isProcessing = false
+                    self.progress = 1.0
+                    
+                    // 打开输出目录
+                    NSWorkspace.shared.open(outputDir)
+                }
+            } catch {
+                await MainActor.run {
+                    self.isProcessing = false
+                    self.errorMessage = ErrorMessage(message: error.localizedDescription)
+                }
+            }
+        }
+    }
+    
+    // 获取输出目录
+    private func getOutputDirectory() -> URL {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyyMMdd_HHmmss"
+        let timestamp = dateFormatter.string(from: Date())
+        
+        let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let outputDir = documentsDirectory.appendingPathComponent("MacPhotoWatermark_\(timestamp)")
+        
+        // 创建目录
+        try? FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+        
+        return outputDir
+    }
+    
+    // 检查是否为图片文件
+    private func isImageFile(_ url: URL) -> Bool {
+        let supportedExtensions = ["jpg", "jpeg", "png", "heic"]
+        return supportedExtensions.contains(url.pathExtension.lowercased())
+    }
+}
+
+// 错误消息模型
+struct ErrorMessage: Identifiable {
+    let id = UUID()
+    let message: String
 } 
